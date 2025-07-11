@@ -30,63 +30,103 @@
 
 
 
-const { getDistanceAndDuration } = require("./utils/ors");
-const { getDistanceAndTime } = require("./utils/ors");
-const { v4: uuidv4 } = require("uuid"); // Optional for packageId
-require("dotenv").config();
+// const { getDistanceAndDuration } = require("./utils/ors");
+// const { getDistanceAndTime } = require("./utils/ors");
+// const { v4: uuidv4 } = require("uuid"); // Optional for packageId
+// require("dotenv").config();
 
 
 
+
+// exports.handler = async (event) => {
+//   const { from, to } = event;
+ 
+//   if (!from || !to) {
+//     return {
+//       statusCode: 400,
+//       body: JSON.stringify({ error: "Both 'from' and 'to' addresses are required." })
+//     };
+//   }
+
+//   try {
+//     const result = await getDistanceAndTime(from, to, process.env.ORS_API_KEY);
+//     console.log(result);
+
+//     const response = {
+//       packageId: uuidv4(),
+//       from,
+//       to,
+//       distance: result.distanceKm,
+//       duration: result.durationMin,
+//       status: "Pending",
+//       createdAt: new Date().toISOString()
+//     };
+
+//     console.log("Generated delivery:", response);
+
+//     return {
+//       statusCode: 200,
+//       body: JSON.stringify(response)
+//     };
+//   } catch (err) {
+//     console.error("Error:", err);
+//     return {
+//       statusCode: 500,
+//       body: JSON.stringify({ error: "Internal Server Error" })
+//     };
+//   }
+// };
+
+
+// if (require.main === module) {
+//   const testEvent = {
+//     from: "Somalingapalem , Elamanchili,Anakapalli , AndhraPradesh",
+//     to: "Hyderabad,Telangana"
+//   };
+
+//   exports.handler(testEvent, {}).then((res) => {
+//     console.log("Lambda output:", res);
+//   }).catch((err) => {
+//     console.error("Lambda error:", err);
+//   });
+// }
+
+
+const AWS = require('aws-sdk');
+const dynamo = new AWS.DynamoDB.DocumentClient();
+const sns = new AWS.SNS();
 
 exports.handler = async (event) => {
-  const { from, to } = event;
- 
-  if (!from || !to) {
-    return {
-      statusCode: 400,
-      body: JSON.stringify({ error: "Both 'from' and 'to' addresses are required." })
-    };
-  }
+  const { packageId, from, to, distance, email } = JSON.parse(event.body);
 
-  try {
-    const result = await getDistanceAndTime(from, to, process.env.ORS_API_KEY);
-    console.log(result);
+  const now = new Date().toISOString();
 
-    const response = {
-      packageId: uuidv4(),
-      from,
-      to,
-      distance: result.distanceKm,
-      duration: result.durationMin,
-      status: "Pending",
-      createdAt: new Date().toISOString()
-    };
-
-    console.log("Generated delivery:", response);
-
-    return {
-      statusCode: 200,
-      body: JSON.stringify(response)
-    };
-  } catch (err) {
-    console.error("Error:", err);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: "Internal Server Error" })
-    };
-  }
-};
-
-
-if (require.main === module) {
-  const testEvent = {
-    from: "Somalingapalem , Elamanchili,Anakapalli , AndhraPradesh",
-    to: "Hyderabad,Telangana"
+  const item = {
+    packageId,
+    from,
+    to,
+    distance,
+    createdAt: now,
+    status: 'Pending',
   };
 
-  exports.handler(testEvent, {}).then((res) => {
-    console.log("Lambda output:", res);
-  }).catch((err) => {
-    console.error("Lambda error:", err);
-  });
-}
+  // Save to DynamoDB
+  await dynamo.put({
+    TableName: 'Deliveries',
+    Item: item,
+  }).promise();
+
+  // Send email using SNS
+  const snsMessage = `Your order (${packageId}) from ${from} to ${to} has been placed successfully. Distance: ${distance} km. Status: Pending.`;
+
+  await sns.publish({
+    Subject: 'Delivery Placed',
+    Message: snsMessage,
+    TopicArn: process.env.SNS_TOPIC_ARN,
+  }).promise();
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({ message: 'Delivery added and confirmation mail sent.', delivery: item }),
+  };
+};

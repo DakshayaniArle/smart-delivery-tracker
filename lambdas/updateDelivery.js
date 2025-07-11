@@ -2,7 +2,6 @@ const AWS = require('aws-sdk');
 const dynamo = new AWS.DynamoDB.DocumentClient();
 const sns = new AWS.SNS();
 
-const SNS_TOPIC_ARN = 'arn:aws:sns:us-east-1:123456789012:DeliveryNotifications'; // replace with your actual ARN
 
 exports.handler = async (event) => {
   const packageId = event.packageId;
@@ -58,7 +57,7 @@ exports.handler = async (event) => {
   // 🔔 Send SNS email when delivered
   if (newStatus === 'Delivered') {
     await sns.publish({
-      TopicArn: SNS_TOPIC_ARN,
+      TopicArn:process.env.SNS_TOPIC_ARN,
       Subject: 'Package Delivered!',
       Message: `The package with ID ${packageId} has been successfully delivered.`
     }).promise();
